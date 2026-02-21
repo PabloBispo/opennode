@@ -1,0 +1,135 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-backend:
+    name: Test Python Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: |
+          cd backend
+          pytest --tb=short -q
+
+  test-frontend:
+    name: Test Electron Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: cd electron && npm install
+      - name: Run type check
+        run: cd electron && npm run typecheck
+      - name: Run tests
+        run: cd electron && npm test -- --run
+
+  build-mac:
+    name: Build macOS
+    runs-on: macos-latest
+    needs: [test-backend, test-frontend]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: cd electron && npm install
+      - name: Build
+        run: cd electron && npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opennode-mac
+          path: electron/dist-build/*.dmg
+
+  build-win:
+    name: Build Windows
+    runs-on: windows-latest
+    needs: [test-backend, test-frontend]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: cd electron && npm install
+      - name: Build
+        run: cd electron && npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opennode-win
+          path: electron/dist-build/*.exe
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: cd electron && npm install
+      - name: Build
+        run: cd electron && npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opennode-linux
+          path: electron/dist-build/*.AppImage
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-mac, build-win, build-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

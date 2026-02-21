@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-backend:
+    name: Lint Python Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check backend/
+
+  test-backend:
+    name: Test Python Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: |
+          cd backend
+          pytest --tb=short -q
+
+  typecheck-frontend:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: cd electron && npm install
+      - name: Type check
+        run: cd electron && npm run typecheck
+      - name: Run tests
+        run: cd electron && npm test -- --run
