@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+dist/
+build/
+out/
+*.egg-info/
+
+# Models (too large for git)
+models/
+*.nemo
+*.onnx
+*.bin
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio files
+*.wav
+*.mp3
+*.ogg
+
+# Data
+*.db
+*.sqlite
