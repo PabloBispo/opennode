@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+import numpy as np
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from loguru import logger
@@ -14,15 +16,23 @@ from loguru import logger
 from .config import settings
 from .storage import DataManager, export_json, export_markdown, export_srt, export_txt
 from .utils import check_gpu
+from .asr.factory import create_asr_engine
+from .pipeline.connection_manager import ConnectionManager
+from .pipeline.session import TranscriptionSession
+from .protocol import AudioChunkMessage, ControlMessage
 
 # Module-level reference so endpoints can access it without going through request.app.state
 data_manager: Optional[DataManager] = None
+
+# Module-level singletons (initialized in lifespan)
+_connection_manager: ConnectionManager = ConnectionManager()
+_asr_engine = None  # initialized in lifespan when models are available
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown."""
-    global data_manager
+    global data_manager, _asr_engine
 
     logger.info(f"OpenNode backend starting on {settings.host}:{settings.port}")
     logger.info(f"ASR engine: {settings.asr_engine}")
@@ -40,6 +50,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info(f"GPU detected: {gpu_info['name']} ({gpu_info['vram_mb']} MB VRAM)")
     else:
         logger.info("No CUDA GPU detected — running on CPU")
+
+    # Initialize ASR engine (optional — transcription degraded if unavailable)
+    try:
+        _asr_engine = create_asr_engine(settings)
+        await _asr_engine.load_model()
+        logger.info(f"ASR engine loaded: {settings.asr_engine}")
+    except Exception as e:
+        logger.warning(f"ASR engine not loaded: {e} — transcription will be unavailable")
+        _asr_engine = None
 
     yield
 
@@ -80,26 +99,77 @@ async def health() -> dict:  # type: ignore[type-arg]
     }
 
 
+# ─── Status API ───────────────────────────────────────────────────────────────
+
+
+@app.get("/api/status")
+async def get_status() -> dict:  # type: ignore[type-arg]
+    """Return server status including active sessions, ASR engine, and GPU info."""
+    from .utils import check_gpu
+    gpu = check_gpu()
+    return {
+        "active_sessions": _connection_manager.active_count,
+        "asr_engine": settings.asr_engine,
+        "model_loaded": bool(_asr_engine and _asr_engine.is_loaded),
+        "gpu_available": gpu["available"],
+        "gpu_info": gpu,
+    }
+
+
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 
 
 @app.websocket("/ws/transcribe")
-async def transcribe(websocket: WebSocket) -> None:
-    """Main WebSocket endpoint for real-time transcription.
-
-    Implemented in Task 04.
-    """
+async def transcribe_endpoint(websocket: WebSocket) -> None:
+    """Main WebSocket endpoint for real-time transcription."""
     await websocket.accept()
-    from loguru import logger
-    from .protocol import StatusMessage
+    session = await _connection_manager.connect(websocket, _asr_engine)
 
-    status = StatusMessage(
-        state="ready",
-        model_loaded=False,
-        gpu_available=False,
-    )
-    await websocket.send_text(status.model_dump_json())
-    await websocket.close()
+    # Send initial status
+    await session._send_status("ready")
+
+    try:
+        async for raw in websocket.iter_text():
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON received on WebSocket")
+                continue
+
+            msg_type = data.get("type")
+
+            if msg_type == "audio_chunk":
+                try:
+                    audio_bytes = base64.b64decode(data["data"])
+                    audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                    timestamp = data.get("timestamp", 0)
+                    await session.process_audio(audio, timestamp)
+                except Exception as e:
+                    logger.error(f"Audio processing error: {e}")
+
+            elif msg_type == "control":
+                action = data.get("action", "")
+                config = data.get("config")
+                if action == "start":
+                    await session.start(config)
+                elif action == "stop":
+                    await session.stop()
+                elif action == "pause":
+                    await session.pause()
+                elif action == "resume":
+                    await session.resume()
+                else:
+                    logger.warning(f"Unknown control action: {action}")
+
+            else:
+                logger.warning(f"Unknown message type: {msg_type}")
+
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected: {session.session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        await _connection_manager.disconnect(session.session_id)
 
 
 # ─── Sessions API ─────────────────────────────────────────────────────────────
