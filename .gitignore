@@ -1,41 +1,60 @@
-# Dependencies
+# Node
 node_modules/
+dist/
+out/
+.cache/
+
+# Python
 .venv/
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
 # Build outputs
-dist/
 build/
-out/
-*.egg-info/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm
 
-# Models (too large for git)
+# Models (large files — download separately)
 models/
 *.nemo
 *.onnx
+*.pt
 *.bin
 
-# Environment
-.env
-.env.local
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Electron
+electron/dist/
+electron/out/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+logs/
 
 # Audio files
 *.wav
 *.mp3
 *.ogg
 
-# Data
+# SQLite
 *.db
 *.sqlite
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
