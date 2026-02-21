@@ -91,6 +91,28 @@ const opennodeAPI = {
   /** Retrieve system information (GPU, RAM, platform). */
   getSystemInfo: (): Promise<SystemInfo> => ipcRenderer.invoke('app:system-info'),
 
+  // ─── Backend management ──────────────────────────────────────────────────────
+  /** Register a callback for when the Python backend becomes ready. */
+  onBackendReady: (cb: (port: number) => void): void => {
+    ipcRenderer.on('backend:ready', (_event, port: number) => cb(port))
+  },
+
+  /** Register a callback for backend log lines. */
+  onBackendLog: (cb: (lines: string[]) => void): void => {
+    ipcRenderer.on('backend:log', (_event, lines: string[]) => cb(lines))
+  },
+
+  /** Get the current backend process status. */
+  getBackendStatus: (): Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }> =>
+    ipcRenderer.invoke('backend:status'),
+
+  /** Get all buffered backend log lines. */
+  getBackendLogs: (): Promise<string[]> => ipcRenderer.invoke('backend:logs'),
+
+  /** Restart the Python backend process. */
+  restartBackend: (): Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }> =>
+    ipcRenderer.invoke('backend:restart'),
+
   // ─── Cleanup ─────────────────────────────────────────────────────────────────
   /**
    * Remove all IPC listeners for the given channel.

@@ -45,6 +45,13 @@ interface OpenNodeAPI {
   // System
   getSystemInfo: () => Promise<SystemInfo>
 
+  // Backend management
+  onBackendReady: (cb: (port: number) => void) => void
+  onBackendLog: (cb: (lines: string[]) => void) => void
+  getBackendStatus: () => Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }>
+  getBackendLogs: () => Promise<string[]>
+  restartBackend: () => Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }>
+
   // Cleanup
   removeAllListeners: (channel: string) => void
 }
