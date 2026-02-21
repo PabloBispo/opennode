@@ -6,6 +6,7 @@ import { settingsService } from './services/settings'
 import { backendManager } from './services/backend-manager'
 import { TranscriptionClient } from './services/ws-client'
 import { AudioCaptureService } from './services/audio-capture'
+import { systemTray } from './tray'
 import type { CaptureConfig, Session, SystemInfo } from '@shared/types'
 
 // ─── Store (session persistence only) ────────────────────────────────────────
@@ -36,23 +37,38 @@ async function connectToBackend(): Promise<void> {
     await wsClient.connect()
     console.log('[main] Connected to backend WebSocket')
 
-    // Forward server messages to the renderer
+    // Forward server messages to the renderer and overlay
     wsClient.onMessage((msg) => {
       const mainWindow = windowManager.getMainWindow()
-      if (!mainWindow || mainWindow.isDestroyed()) return
+      const overlayWindow = windowManager.getOverlayWindow()
+
+      const sendToMain = (channel: string, data: unknown) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(channel, data)
+        }
+      }
+
+      const sendToOverlay = (channel: string, data: unknown) => {
+        if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+          overlayWindow.webContents.send(channel, data)
+        }
+      }
 
       switch (msg.type) {
         case 'partial_transcript':
-          mainWindow.webContents.send('transcript:partial', msg)
+          sendToMain('transcript:partial', msg)
+          sendToOverlay('transcript:partial', msg)
           break
         case 'final_transcript':
-          mainWindow.webContents.send('transcript:final', msg)
+          sendToMain('transcript:final', msg)
+          sendToOverlay('transcript:final', msg)
           break
         case 'status':
-          mainWindow.webContents.send('status', msg)
+          sendToMain('status', msg)
+          sendToOverlay('status', msg)
           break
         case 'summary':
-          mainWindow.webContents.send('summary', msg)
+          sendToMain('summary', msg)
           break
         default:
           break
@@ -143,6 +159,28 @@ ipcMain.handle('overlay:toggle', async (): Promise<{ visible: boolean }> => {
   return { visible: overlay?.isVisible() ?? false }
 })
 
+ipcMain.on('overlay:click-through', (_, enabled: boolean) => {
+  const overlay = windowManager.getOverlayWindow()
+  overlay?.setIgnoreMouseEvents(enabled, { forward: true })
+})
+
+ipcMain.on('overlay:drag', (_, { deltaX, deltaY }: { deltaX: number; deltaY: number }) => {
+  const overlay = windowManager.getOverlayWindow()
+  if (overlay) {
+    const [x, y] = overlay.getPosition()
+    overlay.setPosition(x + deltaX, y + deltaY)
+  }
+})
+
+ipcMain.on('overlay:minimize', () => {
+  // handled in renderer — just close
+})
+
+ipcMain.on('overlay:close', () => {
+  const overlay = windowManager.getOverlayWindow()
+  overlay?.hide()
+})
+
 // ─── System info ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('app:system-info', async (): Promise<SystemInfo> => {
@@ -171,6 +209,12 @@ ipcMain.handle('backend:restart', async () => {
   await backendManager.stop()
   await backendManager.start()
   return backendManager.getStatus()
+})
+
+// ─── Tray ─────────────────────────────────────────────────────────────────────
+
+ipcMain.on('tray:set-state', (_, state: 'idle' | 'recording' | 'paused') => {
+  systemTray.setState(state)
 })
 
 // ─── App lifecycle ─────────────────────────────────────────────────────────────

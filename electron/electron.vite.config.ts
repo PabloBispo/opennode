@@ -31,6 +31,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/preload/index.ts'),
+          overlay: resolve('src/preload/overlay.ts'),
         },
       },
     },

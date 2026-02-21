@@ -61,7 +61,7 @@ export class WindowManager {
       skipTaskbar: true,
       show: false, // shown only when toggled
       webPreferences: {
-        preload: path.join(__dirname, '../preload/index.js'),
+        preload: path.join(__dirname, '../preload/overlay.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
