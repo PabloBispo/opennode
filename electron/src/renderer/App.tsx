@@ -1,15 +1,24 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { StatusMessage } from '@shared/types'
 import Settings from './components/Settings'
+import { MicAudioProcessor } from './services/audio-processor'
 
 /**
  * Root application component.
  * Renders either the main transcription view or the Settings panel depending
  * on whether the user has clicked the settings gear icon.
+ *
+ * Audio flow:
+ * 1. The main process sends `audio:start-mic` when recording starts.
+ * 2. The renderer creates a `MicAudioProcessor` and starts capturing mic audio.
+ * 3. Each PCM chunk is sent back to the main process via `window.opennode.sendAudioChunk`.
+ * 4. The main process forwards the chunk to the Python backend over WebSocket.
+ * 5. On `audio:stop-mic`, the processor is stopped and resources are released.
  */
 export default function App(): React.ReactElement {
   const [backendStatus, setBackendStatus] = useState<StatusMessage['state']>('ready')
   const [showSettings, setShowSettings] = useState(false)
+  const micProcessorRef = useRef<MicAudioProcessor | null>(null)
 
   useEffect(() => {
     // Listen for backend status updates forwarded from the main process
@@ -17,8 +26,38 @@ export default function App(): React.ReactElement {
       setBackendStatus(msg.state)
     })
 
+    // Main process instructs renderer to start microphone capture
+    window.opennode.onStartMic((_config) => {
+      const processor = new MicAudioProcessor()
+      micProcessorRef.current = processor
+
+      processor
+        .start((buffer) => {
+          window.opennode.sendAudioChunk(buffer)
+        })
+        .catch((err) => {
+          console.error('[App] Failed to start mic capture:', err)
+        })
+    })
+
+    // Main process instructs renderer to stop microphone capture
+    window.opennode.onStopMic(() => {
+      micProcessorRef.current
+        ?.stop()
+        .catch((err) => console.error('[App] Failed to stop mic capture:', err))
+      micProcessorRef.current = null
+    })
+
     return () => {
       window.opennode.removeAllListeners('status')
+      window.opennode.removeAllListeners('audio:start-mic')
+      window.opennode.removeAllListeners('audio:stop-mic')
+
+      // Stop mic processor if active when component unmounts
+      micProcessorRef.current
+        ?.stop()
+        .catch((err) => console.error('[App] Failed to stop mic capture on unmount:', err))
+      micProcessorRef.current = null
     }
   }, [])
 

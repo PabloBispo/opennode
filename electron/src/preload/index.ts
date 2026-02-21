@@ -23,6 +23,30 @@ const opennodeAPI = {
   /** Stop the active audio capture. */
   stopCapture: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('audio:stop'),
 
+  /**
+   * Send a raw PCM audio chunk from the renderer (mic capture) to the main
+   * process, which forwards it to the Python backend via WebSocket.
+   *
+   * @param buffer - ArrayBuffer containing PCM int16 samples (16kHz, mono)
+   */
+  sendAudioChunk: (buffer: ArrayBuffer): void => ipcRenderer.send('audio:send-chunk', buffer),
+
+  /**
+   * Register a callback invoked when the main process asks the renderer to
+   * start microphone capture.
+   */
+  onStartMic: (cb: (config: import('@shared/types').CaptureConfig) => void): void => {
+    ipcRenderer.on('audio:start-mic', (_event, config: import('@shared/types').CaptureConfig) => cb(config))
+  },
+
+  /**
+   * Register a callback invoked when the main process asks the renderer to
+   * stop microphone capture.
+   */
+  onStopMic: (cb: () => void): void => {
+    ipcRenderer.on('audio:stop-mic', () => cb())
+  },
+
   // ─── Transcription events ───────────────────────────────────────────────────
   /** Register a callback for partial (in-progress) transcript events. */
   onPartialTranscript: (cb: (data: PartialTranscriptMessage) => void): void => {

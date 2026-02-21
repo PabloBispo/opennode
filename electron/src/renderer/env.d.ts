@@ -18,6 +18,12 @@ interface OpenNodeAPI {
   // Audio
   startCapture: (config: CaptureConfig) => Promise<{ ok: boolean }>
   stopCapture: () => Promise<{ ok: boolean }>
+  /** Send a raw PCM audio chunk from the renderer to the main process. */
+  sendAudioChunk: (buffer: ArrayBuffer) => void
+  /** Listen for the main process signal to start mic capture. */
+  onStartMic: (cb: (config: CaptureConfig) => void) => void
+  /** Listen for the main process signal to stop mic capture. */
+  onStopMic: (cb: () => void) => void
 
   // Transcription events
   onPartialTranscript: (cb: (data: PartialTranscriptMessage) => void) => void
