@@ -2,27 +2,15 @@ import { app, ipcMain } from 'electron'
 import os from 'os'
 import ElectronStore from 'electron-store'
 import { WindowManager } from './WindowManager'
-import type { AppSettings, CaptureConfig, Session, SystemInfo } from '@shared/types'
+import { settingsService } from './services/settings'
+import type { CaptureConfig, Session, SystemInfo } from '@shared/types'
 
-// ─── Store (persistent settings) ─────────────────────────────────────────────
+// ─── Store (session persistence only) ────────────────────────────────────────
+// Settings are now managed by settingsService (electron-store under the hood).
 
-const DEFAULT_SETTINGS: AppSettings = {
-  asr_engine: 'parakeet',
-  language: 'en',
-  enable_diarization: false,
-  max_speakers: 4,
-  enable_summarization: false,
-  summarization_provider: 'ollama',
-  ollama_model: 'llama3',
-  capture_source: 'microphone',
-  overlay_position: 'bottom-right',
-  overlay_opacity: 0.9,
-  theme: 'system',
-}
-
-const store = new ElectronStore<{ settings: AppSettings; sessions: Session[] }>({
+const store = new ElectronStore<{ sessions: Session[] }>({
+  name: 'sessions',
   defaults: {
-    settings: DEFAULT_SETTINGS,
     sessions: [],
   },
 })
@@ -71,14 +59,14 @@ ipcMain.handle('sessions:delete', async (_event, id: string): Promise<{ ok: bool
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-ipcMain.handle('settings:get', async (): Promise<AppSettings> => {
-  return store.get('settings', DEFAULT_SETTINGS)
+ipcMain.handle('settings:get', async () => {
+  return settingsService.get()
 })
 
-ipcMain.handle('settings:update', async (_event, partial: Partial<AppSettings>): Promise<AppSettings> => {
-  const current = store.get('settings', DEFAULT_SETTINGS)
-  const updated = { ...current, ...partial }
-  store.set('settings', updated)
+ipcMain.handle('settings:update', async (_event, partial: Parameters<typeof settingsService.update>[0]) => {
+  const updated = settingsService.update(partial)
+  // Propagate changes to the Python backend asynchronously
+  settingsService.syncToBackend()
   return updated
 })
 
@@ -106,6 +94,20 @@ ipcMain.handle('app:system-info', async (): Promise<SystemInfo> => {
 
 app.whenReady().then(() => {
   windowManager.createMainWindow()
+
+  // Register global shortcuts. Handlers are stubs here — Tasks 10/11 will wire
+  // the recording pipeline. The overlay toggle calls the windowManager directly.
+  settingsService.registerShortcuts({
+    toggleRecording: () => {
+      console.log('[main] global shortcut: toggleRecording')
+    },
+    toggleOverlay: () => {
+      windowManager.toggleOverlay()
+    },
+    togglePause: () => {
+      console.log('[main] global shortcut: togglePause')
+    },
+  })
 
   // macOS: re-create window when dock icon is clicked and no windows exist
   app.on('activate', () => {
