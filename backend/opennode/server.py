@@ -21,9 +21,13 @@ from .pipeline.connection_manager import ConnectionManager
 from .pipeline.session import TranscriptionSession
 from .protocol import AudioChunkMessage, ControlMessage
 from .diarization import PYANNOTE_AVAILABLE
+from .summarization.service import SummarizationService
+from .config import settings as _settings
 
 # Module-level reference so endpoints can access it without going through request.app.state
 data_manager: Optional[DataManager] = None
+
+_summarization_service = SummarizationService(_settings)
 
 # Module-level singletons (initialized in lifespan)
 _connection_manager: ConnectionManager = ConnectionManager()
@@ -290,3 +294,33 @@ async def diarize_session(session_id: str) -> dict:  # type: ignore[type-arg]
         "message": "Diarization requires pyannote.audio and HuggingFace token",
         "pyannote_available": PYANNOTE_AVAILABLE,
     }
+
+
+# ─── Summarization API ────────────────────────────────────────────────────────
+
+
+@app.post("/api/sessions/{session_id}/summarize")
+async def summarize_session(session_id: str) -> dict:  # type: ignore[type-arg]
+    """Trigger summarization for a completed session."""
+    # Check session exists
+    session = await data_manager.db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    summary = await _summarization_service.summarize_session(session_id, data_manager.db)
+    if summary is None:
+        return {"status": "failed", "message": "Summarizer not available or no transcripts"}
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "executive_summary": summary.executive_summary,
+        "key_points": summary.key_points,
+        "action_items": [{"description": a.description, "assignee": a.assignee, "deadline": a.deadline} for a in summary.action_items],
+        "decisions": summary.decisions,
+        "next_steps": summary.next_steps,
+    }
+
+
+@app.get("/api/summarization/status")
+async def summarization_status() -> dict:  # type: ignore[type-arg]
+    """Check if the configured summarizer is available."""
+    return await _summarization_service.check_availability()
