@@ -20,6 +20,7 @@ from .asr.factory import create_asr_engine
 from .pipeline.connection_manager import ConnectionManager
 from .pipeline.session import TranscriptionSession
 from .protocol import AudioChunkMessage, ControlMessage
+from .diarization import PYANNOTE_AVAILABLE
 
 # Module-level reference so endpoints can access it without going through request.app.state
 data_manager: Optional[DataManager] = None
@@ -273,3 +274,19 @@ async def export_session(
         status_code=400,
         detail=f"Unsupported format '{format}'. Use one of: markdown, srt, json, txt",
     )
+
+
+# ─── Diarization API ──────────────────────────────────────────────────────────
+
+
+@app.post("/api/sessions/{session_id}/diarize")
+async def diarize_session(session_id: str) -> dict:  # type: ignore[type-arg]
+    """Trigger speaker diarization for a completed session."""
+    # In full implementation: load audio, run diarization, save speaker labels
+    # For now: return stub response indicating diarization status
+    return {
+        "session_id": session_id,
+        "status": "queued",
+        "message": "Diarization requires pyannote.audio and HuggingFace token",
+        "pyannote_available": PYANNOTE_AVAILABLE,
+    }
