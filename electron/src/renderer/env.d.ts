@@ -52,6 +52,12 @@ interface OpenNodeAPI {
   getBackendLogs: () => Promise<string[]>
   restartBackend: () => Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }>
 
+  // Tray
+  /** Listen for the tray menu's request to toggle recording. */
+  onTrayToggleRecording: (cb: () => void) => void
+  /** Notify the tray of the current recording state. */
+  setTrayState: (state: 'idle' | 'recording' | 'paused') => void
+
   // Cleanup
   removeAllListeners: (channel: string) => void
 }

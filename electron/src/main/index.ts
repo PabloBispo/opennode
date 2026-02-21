@@ -222,6 +222,25 @@ ipcMain.on('tray:set-state', (_, state: 'idle' | 'recording' | 'paused') => {
 app.whenReady().then(async () => {
   const mainWindow = windowManager.createMainWindow()
 
+  // ─── System tray ───────────────────────────────────────────────────────────
+
+  systemTray.create({
+    onToggleRecording: () => {
+      // Toggle recording — send to renderer or handle directly
+      mainWindow?.webContents.send('tray:toggle-recording')
+    },
+    onToggleOverlay: () => {
+      windowManager.toggleOverlay()
+      systemTray.setOverlayVisible(!windowManager.getOverlayWindow()?.isVisible())
+    },
+    onShowMainWindow: () => {
+      if (mainWindow) {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    },
+  })
+
   // ─── Backend events ────────────────────────────────────────────────────────
 
   backendManager.on('ready', (port: number) => {
@@ -276,15 +295,15 @@ app.whenReady().then(async () => {
   })
 })
 
-// Quit the app when all windows are closed (except on macOS)
+// Keep running in tray — don't quit when all windows are closed.
+// User must quit via tray menu or Cmd+Q.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  // intentionally empty — tray keeps the app alive
 })
 
-// Clean up WebSocket and Python backend on quit
+// Clean up WebSocket, Python backend, and tray on quit
 app.on('before-quit', () => {
+  systemTray.destroy()
   wsClient.disconnect()
   backendManager.stop().catch((err: unknown) => {
     console.error('[main] Error stopping Python backend:', err)

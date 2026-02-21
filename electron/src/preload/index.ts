@@ -113,6 +113,22 @@ const opennodeAPI = {
   restartBackend: (): Promise<{ running: boolean; ready: boolean; port: number; pid: number | null }> =>
     ipcRenderer.invoke('backend:restart'),
 
+  // ─── Tray ────────────────────────────────────────────────────────────────────
+  /**
+   * Register a callback invoked when the tray menu requests a recording toggle.
+   */
+  onTrayToggleRecording: (cb: () => void): void => {
+    ipcRenderer.on('tray:toggle-recording', () => cb())
+  },
+
+  /**
+   * Notify the main process of the current recording state so the tray icon
+   * and context menu can reflect it.
+   */
+  setTrayState: (state: 'idle' | 'recording' | 'paused'): void => {
+    ipcRenderer.send('tray:set-state', state)
+  },
+
   // ─── Cleanup ─────────────────────────────────────────────────────────────────
   /**
    * Remove all IPC listeners for the given channel.
